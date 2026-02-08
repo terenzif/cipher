@@ -58,7 +58,7 @@ function validateColumnSchema(column) {
   if ('production' !== process.env.NODE_ENV) {
     (0, _invariant.default)(column.name, "Missing column name");
     validateName(column.name);
-    (0, _invariant.default)(['string', 'boolean', 'number'].includes(column.type), "Invalid type ".concat(column.type, " for column '").concat(column.name, "' (valid: string, boolean, number)"));
+    (0, _invariant.default)(['string', 'boolean', 'number', 'json'].includes(column.type), "Invalid type ".concat(column.type, " for column '").concat(column.name, "' (valid: string, boolean, number, json)"));
     if ('created_at' === column.name || 'updated_at' === column.name) {
       (0, _invariant.default)('number' === column.type && !column.isOptional, "".concat(column.name, " must be of type number and not optional"));
     }

@@ -14,7 +14,17 @@ const commonSchema =
 
 const encodeCreateTable = ({ name, columns }: TableSchema): SQL => {
   const columnsSQL = [standardColumns]
-    .concat(Object.keys(columns).map((column) => `"${column}"`))
+    .concat(
+      Object.keys(columns).map((columnName) => {
+        const column = columns[columnName]
+        if (column.isGenerated) {
+          return `"${columnName}" GENERATED ALWAYS AS (${
+            column.generationSql || ''
+          }) VIRTUAL`
+        }
+        return `"${columnName}"`
+      }),
+    )
     .join(', ')
   return `create table "${name}" (${columnsSQL});`
 }
@@ -185,6 +195,14 @@ const encodeAddColumnsMigrationStep: (AddColumnsMigrationStep) => SQL = ({
 }) =>
   columns
     .map((column) => {
+      if (column.isGenerated) {
+        const addColumn = `alter table "${table}" add column "${column.name}" GENERATED ALWAYS AS (${
+          column.generationSql || ''
+        }) VIRTUAL;`
+        const addIndex = encodeIndex(column, table)
+        return (unsafeSql || identity)(addColumn + addIndex)
+      }
+
       const addColumn = `alter table "${table}" add "${column.name}";`
       const setDefaultValue = `update "${table}" set "${column.name}" = ${encodeValue(
         nullValue(column),
