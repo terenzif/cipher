@@ -1,14 +1,28 @@
 "use strict";
 
-var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
-exports.__esModule = true;
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
 exports.appSchema = appSchema;
 exports.columnName = columnName;
 exports.tableName = tableName;
 exports.tableSchema = tableSchema;
 exports.validateColumnSchema = validateColumnSchema;
 var _invariant = _interopRequireDefault(require("../utils/common/invariant"));
+function _interopRequireDefault(e) { return e && e.__esModule ? e : { default: e }; }
 // NOTE: Only require files needed (critical path on web)
+/**
+ * String that signifies a database table name (mapping to WatermelonDB Models)
+ */
+/**
+ * String that signifies a database column name (mapping to WatermelonDB fields)
+ */
+/**
+ * Type of a column
+ */
+/**
+ * Definition of a table column
+ */
 /**
  * Creates a typed TableName
  */
@@ -27,43 +41,47 @@ function columnName(name) {
  * Creates a database schema object. Pass table definitions created using {@see tableSchema}
  */
 function appSchema({
-  version: version,
+  version,
   tables: tableList,
-  unsafeSql: unsafeSql
+  unsafeSql
 }) {
-  if ('production' !== process.env.NODE_ENV) {
-    (0, _invariant.default)(0 < version, "Schema version must be greater than 0");
+  if (process.env.NODE_ENV !== 'production') {
+    (0, _invariant.default)(version > 0, `Schema version must be greater than 0`);
   }
-  var tables = tableList.reduce(function (map, table) {
-    if ('production' !== process.env.NODE_ENV) {
-      (0, _invariant.default)('object' === typeof table && table.name, "Table schema must contain a name");
+  const tables = tableList.reduce((map, table) => {
+    if (process.env.NODE_ENV !== 'production') {
+      (0, _invariant.default)(typeof table === 'object' && table.name, `Table schema must contain a name`);
     }
     map[table.name] = table;
     return map;
   }, {});
   return {
-    version: version,
-    tables: tables,
-    unsafeSql: unsafeSql
+    version,
+    tables,
+    unsafeSql
   };
 }
-var validateName = function (name) {
-  if ('production' !== process.env.NODE_ENV) {
-    (0, _invariant.default)(!['id', '_changed', '_status', 'local_storage'].includes(name.toLowerCase()), "Invalid column or table name '".concat(name, "' - reserved by WatermelonDB"));
-    var checkName = require('../utils/fp/checkName').default;
+const validateName = name => {
+  if (process.env.NODE_ENV !== 'production') {
+    (0, _invariant.default)(!['id', '_changed', '_status', 'local_storage'].includes(name.toLowerCase()), `Invalid column or table name '${name}' - reserved by WatermelonDB`);
+    const checkName = require('../utils/fp/checkName').default;
     checkName(name);
   }
 };
 function validateColumnSchema(column) {
-  if ('production' !== process.env.NODE_ENV) {
-    (0, _invariant.default)(column.name, "Missing column name");
+  if (process.env.NODE_ENV !== 'production') {
+    (0, _invariant.default)(column.name, `Missing column name`);
     validateName(column.name);
-    (0, _invariant.default)(['string', 'boolean', 'number', 'json'].includes(column.type), "Invalid type ".concat(column.type, " for column '").concat(column.name, "' (valid: string, boolean, number, json)"));
-    if ('created_at' === column.name || 'updated_at' === column.name) {
-      (0, _invariant.default)('number' === column.type && !column.isOptional, "".concat(column.name, " must be of type number and not optional"));
+    (0, _invariant.default)(['string', 'boolean', 'number', 'json'].includes(column.type), `Invalid type ${column.type} for column '${column.name}' (valid: string, boolean, number, json)`);
+    if (column.name === 'created_at' || column.name === 'updated_at') {
+      (0, _invariant.default)(column.type === 'number' && !column.isOptional, `${column.name} must be of type number and not optional`);
     }
-    if ('last_modified' === column.name) {
-      (0, _invariant.default)('number' === column.type, "For compatibility reasons, column last_modified must be of type 'number', and should be optional");
+    if (column.name === 'last_modified') {
+      (0, _invariant.default)(column.type === 'number', `For compatibility reasons, column last_modified must be of type 'number', and should be optional`);
+    }
+    // Validate generated columns
+    if (column.isGenerated) {
+      (0, _invariant.default)(column.generationSql && column.generationSql.trim(), `Generated column '${column.name}' is missing a generationSql expression`);
     }
   }
 }
@@ -72,27 +90,27 @@ function validateColumnSchema(column) {
  * Creates a typed TableSchema
  */
 function tableSchema({
-  name: name,
+  name,
   columns: columnArray,
-  unsafeSql: unsafeSql,
-  ftsConfig: ftsConfig
+  unsafeSql,
+  ftsConfig
 }) {
-  if ('production' !== process.env.NODE_ENV) {
-    (0, _invariant.default)(name, "Missing table name in schema");
+  if (process.env.NODE_ENV !== 'production') {
+    (0, _invariant.default)(name, `Missing table name in schema`);
     validateName(name);
   }
-  var columns = columnArray.reduce(function (map, column) {
-    if ('production' !== process.env.NODE_ENV) {
+  const columns = columnArray.reduce((map, column) => {
+    if (process.env.NODE_ENV !== 'production') {
       validateColumnSchema(column);
     }
     map[column.name] = column;
     return map;
   }, {});
   return {
-    name: name,
-    columns: columns,
-    columnArray: columnArray,
-    unsafeSql: unsafeSql,
-    ftsConfig: ftsConfig
+    name,
+    columns,
+    columnArray,
+    unsafeSql,
+    ftsConfig
   };
 }

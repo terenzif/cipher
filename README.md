@@ -6,7 +6,7 @@ This fork of WatermelonDB adds powerful Document DB capabilities, including firs
 
 ### JSON Support
 
-You can now define columns as `type: 'json'`. This allows you to store arbitrary JSON documents, which are stored as `TEXT` in SQLite but handled intelligently by the ORM.
+You can now define columns as `type: 'json'`. This allows you to store arbitrary JSON documents, which are stored as `TEXT` in SQLite and handled intelligently by the ORM.
 
 ```javascript
 // schema.js
@@ -29,7 +29,7 @@ export const mySchema = appSchema({
 
 ### Using `@json` Decorator
 
-In your Model definition, use the `@json` decorator to automatically parse and stringify JSON data.
+In your Model definition, use the `@json` decorator to automatically parse and stringify JSON data. The decorator requires a sanitizer function as the second argument.
 
 ```javascript
 // Post.js
@@ -41,7 +41,7 @@ export default class Post extends Model {
 
   @field('title') title
   @field('body') body
-  @json('metadata') metadata // Automatically parses JSON on get, stringifies on set
+  @json('metadata', (raw) => raw || {}) metadata // Automatically parses JSON on get, stringifies on set
 }
 ```
 
