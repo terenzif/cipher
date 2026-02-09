@@ -18,9 +18,16 @@ const encodeCreateTable = ({ name, columns }: TableSchema): SQL => {
       Object.keys(columns).map((columnName) => {
         const column = columns[columnName]
         if (column.isGenerated) {
-          return `"${columnName}" GENERATED ALWAYS AS (${
-            column.generationSql || ''
-          }) VIRTUAL`
+          if (!column.generationSql || !column.generationSql.trim()) {
+            throw new Error(
+              `Generated column "${columnName}" on table "${name}" is missing a generationSql expression.`,
+            )
+          }
+          return `"${columnName}" GENERATED ALWAYS AS (${column.generationSql}) VIRTUAL`
+        }
+        // Add TEXT type for json columns
+        if (column.type === 'json') {
+          return `"${columnName}" TEXT`
         }
         return `"${columnName}"`
       }),
@@ -196,14 +203,19 @@ const encodeAddColumnsMigrationStep: (AddColumnsMigrationStep) => SQL = ({
   columns
     .map((column) => {
       if (column.isGenerated) {
-        const addColumn = `alter table "${table}" add column "${column.name}" GENERATED ALWAYS AS (${
-          column.generationSql || ''
-        }) VIRTUAL;`
+        if (!column.generationSql || !column.generationSql.trim()) {
+          throw new Error(
+            `Generated column "${column.name}" on table "${table}" is missing a generationSql expression.`,
+          )
+        }
+        const addColumn = `alter table "${table}" add column "${column.name}" GENERATED ALWAYS AS (${column.generationSql}) VIRTUAL;`
         const addIndex = encodeIndex(column, table)
         return (unsafeSql || identity)(addColumn + addIndex)
       }
 
-      const addColumn = `alter table "${table}" add "${column.name}";`
+      // Add TEXT type for json columns in migrations
+      const columnType = column.type === 'json' ? ' TEXT' : ''
+      const addColumn = `alter table "${table}" add "${column.name}"${columnType};`
       const setDefaultValue = `update "${table}" set "${column.name}" = ${encodeValue(
         nullValue(column),
       )};`

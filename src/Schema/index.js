@@ -19,7 +19,7 @@ export opaque type ColumnName: string = string
 /**
  * Type of a column
  */
-export type ColumnType = 'string' | 'number' | 'boolean'
+export type ColumnType = 'string' | 'number' | 'boolean' | 'json'
 
 /**
  * Definition of a table column
@@ -36,6 +36,8 @@ export type ColumnSchema = $RE<{
   isOptional?: boolean,
   isIndexed?: boolean,
   isFTS?: boolean,
+  isGenerated?: boolean,
+  generationSql?: string,
 }>
 
 export type ColumnMap = { [name: ColumnName]: ColumnSchema }
@@ -123,8 +125,8 @@ export function validateColumnSchema(column: ColumnSchema): void {
     invariant(column.name, `Missing column name`)
     validateName(column.name)
     invariant(
-      ['string', 'boolean', 'number'].includes(column.type),
-      `Invalid type ${column.type} for column '${column.name}' (valid: string, boolean, number)`,
+      ['string', 'boolean', 'number', 'json'].includes(column.type),
+      `Invalid type ${column.type} for column '${column.name}' (valid: string, boolean, number, json)`,
     )
     if (column.name === 'created_at' || column.name === 'updated_at') {
       invariant(
@@ -136,6 +138,13 @@ export function validateColumnSchema(column: ColumnSchema): void {
       invariant(
         column.type === 'number',
         `For compatibility reasons, column last_modified must be of type 'number', and should be optional`,
+      )
+    }
+    // Validate generated columns
+    if (column.isGenerated) {
+      invariant(
+        column.generationSql && column.generationSql.trim(),
+        `Generated column '${column.name}' is missing a generationSql expression`,
       )
     }
   }

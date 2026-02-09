@@ -1,225 +1,214 @@
 "use strict";
 
-var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
-exports.__esModule = true;
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
 exports.encodeCreateIndices = encodeCreateIndices;
 exports.encodeDropIndices = encodeDropIndices;
 exports.encodeSchema = exports.encodeMigrationSteps = void 0;
-var _toConsumableArray2 = _interopRequireDefault(require("@babel/runtime/helpers/toConsumableArray"));
 var _RawRecord = require("../../../RawRecord");
 var _encodeValue = _interopRequireDefault(require("../encodeValue"));
-var standardColumns = "\"id\" primary key, \"_changed\", \"_status\"";
-var commonSchema = 'create table "local_storage" ("key" varchar(16) primary key not null, "value" text not null);' + 'create index "local_storage_key_index" on "local_storage" ("key");';
-var encodeCreateTable = function ({
-  name: name,
-  columns: columns
-}) {
-  var columnsSQL = [standardColumns].concat(Object.keys(columns).map(function (column) {
-    return "\"".concat(column, "\"");
+function _interopRequireDefault(e) { return e && e.__esModule ? e : { default: e }; }
+const standardColumns = `"id" primary key, "_changed", "_status"`;
+const commonSchema = 'create table "local_storage" ("key" varchar(16) primary key not null, "value" text not null);' + 'create index "local_storage_key_index" on "local_storage" ("key");';
+const encodeCreateTable = ({
+  name,
+  columns
+}) => {
+  const columnsSQL = [standardColumns].concat(Object.keys(columns).map(columnName => {
+    const column = columns[columnName];
+    if (column.isGenerated) {
+      if (!column.generationSql || !column.generationSql.trim()) {
+        throw new Error(`Generated column "${columnName}" on table "${name}" is missing a generationSql expression.`);
+      }
+      return `"${columnName}" GENERATED ALWAYS AS (${column.generationSql}) VIRTUAL`;
+    }
+    // Add TEXT type for json columns
+    if (column.type === 'json') {
+      return `"${columnName}" TEXT`;
+    }
+    return `"${columnName}"`;
   })).join(', ');
-  return "create table \"".concat(name, "\" (").concat(columnsSQL, ");");
+  return `create table "${name}" (${columnsSQL});`;
 };
-var encodeIndex = function (column, tableName) {
-  return column.isIndexed ? "create index if not exists \"".concat(tableName, "_").concat(column.name, "\" on \"").concat(tableName, "\" (\"").concat(column.name, "\");") : '';
-};
-var encodeTableIndicies = function ({
+const encodeIndex = (column, tableName) => column.isIndexed ? `create index if not exists "${tableName}_${column.name}" on "${tableName}" ("${column.name}");` : '';
+const encodeTableIndicies = ({
   name: tableName,
-  columns: columns
-}) {
-  return Object.values(columns)
-  // $FlowFixMe
-  .map(function (column) {
-    return encodeIndex(column, tableName);
-  }).concat(["create index if not exists \"".concat(tableName, "__status\" on \"").concat(tableName, "\" (\"_status\");")]).join('');
-};
-var identity = function (sql) {
-  return sql;
-};
+  columns
+}) => Object.values(columns)
+// $FlowFixMe
+.map(column => encodeIndex(column, tableName)).concat([`create index if not exists "${tableName}__status" on "${tableName}" ("_status");`]).join('');
+const identity = (sql, _) => sql;
 
 /** FTS Full Text Search */
 
-var encodeFTSTrigger = function ({
-  tableName: tableName,
-  ftsTableName: ftsTableName,
-  event: event,
-  action: action
-}) {
-  var triggerName = "".concat(ftsTableName, "_").concat(event);
-  return "create trigger \"".concat(triggerName, "\" after ").concat(event, " on \"").concat(tableName, "\" begin ").concat(action, " end;");
+const encodeFTSTrigger = ({
+  tableName,
+  ftsTableName,
+  event,
+  action
+}) => {
+  const triggerName = `${ftsTableName}_${event}`;
+  return `create trigger "${triggerName}" after ${event} on "${tableName}" begin ${action} end;`;
 };
-var encodeFTSDeleteTrigger = function ({
-  tableName: tableName,
-  ftsTableName: ftsTableName
-}) {
+const encodeFTSDeleteTrigger = ({
+  tableName,
+  ftsTableName
+}) => encodeFTSTrigger({
+  tableName,
+  ftsTableName,
+  event: 'delete',
+  action: `delete from "${ftsTableName}" where "rowid" = OLD.rowid;`
+});
+const encodeFTSInsertTrigger = ({
+  tableName,
+  ftsTableName,
+  ftsColumns
+}) => {
+  const rawColumnNames = ['rowid', ...ftsColumns.map(column => column.name)];
+  const columns = rawColumnNames.map(col => `"${col}"`);
+  const valueColumns = rawColumnNames.map(column => `NEW."${column}"`);
+  const columnsSQL = columns.join(', ');
+  const valueColumnsSQL = valueColumns.join(', ');
   return encodeFTSTrigger({
-    tableName: tableName,
-    ftsTableName: ftsTableName,
-    event: 'delete',
-    action: "delete from \"".concat(ftsTableName, "\" where \"rowid\" = OLD.rowid;")
-  });
-};
-var encodeFTSInsertTrigger = function ({
-  tableName: tableName,
-  ftsTableName: ftsTableName,
-  ftsColumns: ftsColumns
-}) {
-  var rawColumnNames = ['rowid'].concat((0, _toConsumableArray2.default)(ftsColumns.map(function (column) {
-    return column.name;
-  })));
-  var columns = rawColumnNames.map(function (col) {
-    return "\"".concat(col, "\"");
-  });
-  var valueColumns = rawColumnNames.map(function (column) {
-    return "NEW.\"".concat(column, "\"");
-  });
-  var columnsSQL = columns.join(', ');
-  var valueColumnsSQL = valueColumns.join(', ');
-  return encodeFTSTrigger({
-    tableName: tableName,
-    ftsTableName: ftsTableName,
+    tableName,
+    ftsTableName,
     event: 'insert',
-    action: "insert into \"".concat(ftsTableName, "\" (").concat(columnsSQL, ") values (").concat(valueColumnsSQL, ");")
+    action: `insert into "${ftsTableName}" (${columnsSQL}) values (${valueColumnsSQL});`
   });
 };
-var encodeFTSUpdateTrigger = function ({
-  tableName: tableName,
-  ftsTableName: ftsTableName,
-  ftsColumns: ftsColumns
-}) {
-  var rawColumnNames = ftsColumns.map(function (column) {
-    return column.name;
-  });
-  var assignments = rawColumnNames.map(function (column) {
-    return "\"".concat(column, "\" = NEW.\"").concat(column, "\"");
-  });
-  var assignmentsSQL = assignments.join(', ');
+const encodeFTSUpdateTrigger = ({
+  tableName,
+  ftsTableName,
+  ftsColumns
+}) => {
+  const rawColumnNames = ftsColumns.map(column => column.name);
+  const assignments = rawColumnNames.map(column => `"${column}" = NEW."${column}"`);
+  const assignmentsSQL = assignments.join(', ');
   return encodeFTSTrigger({
-    tableName: tableName,
-    ftsTableName: ftsTableName,
+    tableName,
+    ftsTableName,
     event: 'update',
-    action: "update \"".concat(ftsTableName, "\" set ").concat(assignmentsSQL, " where \"rowid\" = NEW.\"rowid\";")
+    action: `update "${ftsTableName}" set ${assignmentsSQL} where "rowid" = NEW."rowid";`
   });
 };
-var encodeFTSTriggers = function ({
-  tableName: tableName,
-  ftsTableName: ftsTableName,
-  ftsColumns: ftsColumns
-}) {
+const encodeFTSTriggers = ({
+  tableName,
+  ftsTableName,
+  ftsColumns
+}) => {
   return encodeFTSDeleteTrigger({
-    tableName: tableName,
-    ftsTableName: ftsTableName
+    tableName,
+    ftsTableName
   }) + encodeFTSInsertTrigger({
-    tableName: tableName,
-    ftsTableName: ftsTableName,
-    ftsColumns: ftsColumns
+    tableName,
+    ftsTableName,
+    ftsColumns
   }) + encodeFTSUpdateTrigger({
-    tableName: tableName,
-    ftsTableName: ftsTableName,
-    ftsColumns: ftsColumns
+    tableName,
+    ftsTableName,
+    ftsColumns
   });
 };
-var encodeFTSTable = function ({
-  ftsTableName: ftsTableName,
-  ftsColumns: ftsColumns,
-  ftsConfig: ftsConfig
-}) {
-  var columnsSQL = ftsColumns.map(function (column) {
-    return "\"".concat(column.name, "\"");
-  }).join(', ');
-  var tokenizer = !ftsConfig ? '' : ftsConfig.tokenizer;
-  var isCaseSensitive = !ftsConfig ? false : ftsConfig.caseSensitive;
-  var ftsInnerSQL = "".concat(tokenizer || 'unicode61').concat(isCaseSensitive ? ' case_sensitive 1' : '');
-  var ftsSQL = null !== ftsConfig && void 0 !== ftsConfig && ftsConfig.disabled ? '' : ", tokenize=\"".concat(ftsInnerSQL, "\"");
-  return "create virtual table \"".concat(ftsTableName, "\" using fts5(").concat(columnsSQL).concat(ftsSQL, ");");
+const encodeFTSTable = ({
+  ftsTableName,
+  ftsColumns,
+  ftsConfig
+}) => {
+  const columnsSQL = ftsColumns.map(column => `"${column.name}"`).join(', ');
+  const tokenizer = !ftsConfig ? '' : ftsConfig.tokenizer;
+  const isCaseSensitive = !ftsConfig ? false : ftsConfig.caseSensitive;
+  const ftsInnerSQL = `${tokenizer || 'unicode61'}${isCaseSensitive ? ' case_sensitive 1' : ''}`;
+  const ftsSQL = ftsConfig !== null && ftsConfig !== void 0 && ftsConfig.disabled ? '' : `, tokenize="${ftsInnerSQL}"`;
+  return `create virtual table "${ftsTableName}" using fts5(${columnsSQL}${ftsSQL});`;
 };
-var encodeFTSSearch = function (tableSchema) {
-  var {
+const encodeFTSSearch = tableSchema => {
+  const {
     name: tableName,
-    columnArray: columnArray,
-    ftsConfig: ftsConfig
+    columnArray,
+    ftsConfig
   } = tableSchema;
-  var ftsColumns = columnArray.filter(function (column) {
-    return column.isFTS;
-  });
-  if (0 === ftsColumns.length) {
+  const ftsColumns = columnArray.filter(column => column.isFTS);
+  if (ftsColumns.length === 0) {
     return '';
   }
-  var ftsTableName = "_fts_".concat(tableName);
+  const ftsTableName = `_fts_${tableName}`;
   return encodeFTSTable({
-    ftsTableName: ftsTableName,
-    ftsColumns: ftsColumns,
-    ftsConfig: ftsConfig
+    ftsTableName,
+    ftsColumns,
+    ftsConfig
   }) + encodeFTSTriggers({
-    tableName: tableName,
-    ftsTableName: ftsTableName,
-    ftsColumns: ftsColumns
+    tableName,
+    ftsTableName,
+    ftsColumns
   });
 };
 
 /** FTS END */
 
 function encodeCreateIndices({
-  tables: tables,
-  unsafeSql: unsafeSql
+  tables,
+  unsafeSql
 }) {
-  var sql = Object.values(tables)
+  const sql = Object.values(tables)
   // $FlowFixMe
   .map(encodeTableIndicies).join('');
   return (unsafeSql || identity)(sql, 'create_indices');
 }
 function encodeDropIndices({
-  tables: tables,
-  unsafeSql: unsafeSql
+  tables,
+  unsafeSql
 }) {
-  var sql = Object.values(tables)
+  const sql = Object.values(tables)
   // $FlowFixMe
-  .map(function ({
+  .map(({
     name: tableName,
-    columns: columns
-  }) {
-    return Object.values(columns)
-    // $FlowFixMe
-    .map(function (column) {
-      return column.isIndexed ? "drop index if exists \"".concat(tableName, "_").concat(column.name, "\";") : '';
-    }).concat(["drop index if exists \"".concat(tableName, "__status\";")]).join('');
-  }).join('');
+    columns
+  }) => Object.values(columns)
+  // $FlowFixMe
+  .map(column => column.isIndexed ? `drop index if exists "${tableName}_${column.name}";` : '').concat([`drop index if exists "${tableName}__status";`]).join('')).join('');
   return (unsafeSql || identity)(sql, 'drop_indices');
 }
-var encodeAddColumnsMigrationStep = function ({
-  table: table,
-  columns: columns,
-  unsafeSql: unsafeSql
-}) {
-  return columns.map(function (column) {
-    var addColumn = "alter table \"".concat(table, "\" add \"").concat(column.name, "\";");
-    var setDefaultValue = "update \"".concat(table, "\" set \"").concat(column.name, "\" = ").concat((0, _encodeValue.default)((0, _RawRecord.nullValue)(column)), ";");
-    var addIndex = encodeIndex(column, table);
-    return (unsafeSql || identity)(addColumn + setDefaultValue + addIndex);
-  }).join('');
-};
-var encodeTable = function (table) {
-  return (table.unsafeSql || identity)(encodeCreateTable(table) + encodeTableIndicies(table) + encodeFTSSearch(table));
-};
-var encodeSchema = function ({
-  tables: tables,
-  unsafeSql: unsafeSql
-}) {
-  var sql = Object.values(tables)
+const encodeAddColumnsMigrationStep = ({
+  table,
+  columns,
+  unsafeSql
+}) => columns.map(column => {
+  if (column.isGenerated) {
+    if (!column.generationSql || !column.generationSql.trim()) {
+      throw new Error(`Generated column "${column.name}" on table "${table}" is missing a generationSql expression.`);
+    }
+    const addColumn = `alter table "${table}" add column "${column.name}" GENERATED ALWAYS AS (${column.generationSql}) VIRTUAL;`;
+    const addIndex = encodeIndex(column, table);
+    return (unsafeSql || identity)(addColumn + addIndex);
+  }
+
+  // Add TEXT type for json columns in migrations
+  const columnType = column.type === 'json' ? ' TEXT' : '';
+  const addColumn = `alter table "${table}" add "${column.name}"${columnType};`;
+  const setDefaultValue = `update "${table}" set "${column.name}" = ${(0, _encodeValue.default)((0, _RawRecord.nullValue)(column))};`;
+  const addIndex = encodeIndex(column, table);
+  return (unsafeSql || identity)(addColumn + setDefaultValue + addIndex);
+}).join('');
+const encodeTable = table => (table.unsafeSql || identity)(encodeCreateTable(table) + encodeTableIndicies(table) + encodeFTSSearch(table));
+const encodeSchema = ({
+  tables,
+  unsafeSql
+}) => {
+  const sql = Object.values(tables)
   // $FlowFixMe
   .map(encodeTable).join('');
   return (unsafeSql || identity)(commonSchema + sql, 'setup');
 };
 exports.encodeSchema = encodeSchema;
-var encodeMigrationSteps = function (steps) {
-  return steps.map(function (step) {
-    if ('create_table' === step.type) {
-      return encodeTable(step.schema);
-    } else if ('add_columns' === step.type) {
-      return encodeAddColumnsMigrationStep(step);
-    } else if ('sql' === step.type) {
-      return step.sql;
-    }
-    throw new Error("Unsupported migration step ".concat(step.type));
-  }).join('');
-};
+const encodeMigrationSteps = steps => steps.map(step => {
+  if (step.type === 'create_table') {
+    return encodeTable(step.schema);
+  } else if (step.type === 'add_columns') {
+    return encodeAddColumnsMigrationStep(step);
+  } else if (step.type === 'sql') {
+    return step.sql;
+  }
+  throw new Error(`Unsupported migration step ${step.type}`);
+}).join('');
 exports.encodeMigrationSteps = encodeMigrationSteps;
